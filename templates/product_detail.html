@@ -1,0 +1,45 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>{{ product['name'] }}</title>
+    <!-- Bootstrap CSS -->
+    <link href="https://stackpath.bootstrapcdn.com/bootstrap/4.5.2/css/bootstrap.min.css" rel="stylesheet">
+</head>
+<body>
+    <div class="container mt-5">
+        <h1>{{ product['name'] }} by {{ product['brand'] }}</h1>
+        <p><strong>Price:</strong> ${{ product['price'] }}</p>
+        <p><strong>Category:</strong> {{ product['category'] }}</p>
+        <p><strong>Size:</strong> {{ product['size'] }}</p>
+        <p><strong>Stock:</strong> {{ product['stock'] }}</p>
+        <p><strong>Rating:</strong> {{ product['rating'] }} stars</p>
+
+        <h2 class="mt-4">Reviews</h2>
+        <ul class="list-group">
+            {% for review in reviews %}
+                <li class="list-group-item">
+                    <strong>{{ review['customer_id'] }}: </strong>{{ review['rating'] }} stars
+                    <p>{{ review['comment'] }}</p>
+                </li>
+            {% endfor %}
+        </ul>
+
+        <form action="{{ url_for('add_to_cart', product_id=product['_id']) }}" method="POST" class="mt-4">
+            <div class="form-group">
+                <label for="quantity">Quantity:</label>
+                <input type="number" name="quantity" class="form-control" value="1" min="1" max="{{ product['stock'] }}">
+            </div>
+            <button type="submit" class="btn btn-primary">Add to Cart</button>
+        </form>
+
+        <a href="{{ url_for('index') }}" class="btn btn-link mt-3">Back to Products</a>
+    </div>
+
+    <!-- Bootstrap JS and dependencies -->
+    <script src="https://code.jquery.com/jquery-3.5.1.slim.min.js"></script>
+    <script src="https://cdn.jsdelivr.net/npm/@popperjs/core@2.9.2/dist/umd/popper.min.js"></script>
+    <script src="https://stackpath.bootstrapcdn.com/bootstrap/4.5.2/js/bootstrap.min.js"></script>
+</body>
+</html>
