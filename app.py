@@ -11,6 +11,7 @@ from wtforms import StringField, IntegerField, PasswordField, FormField
 from wtforms.validators import DataRequired, Email, Length
 from flask_admin.form import BaseForm
 import secrets
+
 # --- App Configuration ---
 app = Flask(__name__)
 app.secret_key = secrets.token_hex(16)
@@ -45,8 +46,7 @@ class AddressForm(BaseForm):
 class CustomerRegistrationForm(BaseForm):
     name = StringField('Name', validators=[DataRequired()])
     email = StringField('Email', validators=[DataRequired(), Email()])
-    password = PasswordField('Password', validators=[DataRequired(), Length(min=6)])
-    confirm_password = PasswordField('Confirm Password', validators=[DataRequired(), Length(min=6)])
+    phone = PasswordField('Phone', validators=[DataRequired(), Length(min=6)])
 
 # --- Flask-Admin Custom ModelView ---
 class CustomAdminModelView(ModelView):
@@ -219,12 +219,12 @@ def checkout():
 def login():
     if request.method == 'POST':
         email = request.form['email']
-        password = request.form['password']
+        phone = request.form['phone']
         
         # جستجو برای کاربر در MongoDB
         user = mongo.db.Customers.find_one({"email": email})
         
-        if user and check_password_hash(user['password'], password):
+        if user and (user['phone']== phone):
             # اگر کاربر پیدا شد و رمز عبور درست بود
             session['user_id'] = str(user['_id'])  # ذخیره اطلاعات کاربر در سشن
             return redirect(url_for('index'))  # هدایت به صفحه اصلی
@@ -241,17 +241,15 @@ def register():
     if request.method == 'POST':
         if form.validate():
             print("Form validated successfully")
-            if form.password.data != form.confirm_password.data:
-                return "Passwords do not match", 400
-            hashed_password = bcrypt.generate_password_hash(form.password.data).decode('utf-8')
             existing_user = mongo.db.Customers.find_one({"email": form.email.data})
+            phone=form.phone.data
             if existing_user:
                 return "Email already registered", 400
 
             customer = {
                 "name": form.name.data,
                 "email": form.email.data,
-                "password": hashed_password,
+                "phone": phone,
                 "registration_date": str(datetime.datetime.now())
             }
             mongo.db.Customers.insert_one(customer)
