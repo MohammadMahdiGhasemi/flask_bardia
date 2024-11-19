@@ -10,10 +10,10 @@ from flask_admin.contrib.pymongo import ModelView
 from wtforms import StringField, IntegerField, PasswordField, FormField
 from wtforms.validators import DataRequired, Email, Length
 from flask_admin.form import BaseForm
-
+import secrets
 # --- App Configuration ---
 app = Flask(__name__)
-app.secret_key = 'your_secret_key'
+app.secret_key = secrets.token_hex(16)
 app.config["MONGO_URI"] = "mongodb://localhost:27017/perfume_store"
 
 # --- Extensions ---
