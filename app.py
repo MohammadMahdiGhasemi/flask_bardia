@@ -11,11 +11,19 @@ from wtforms import StringField, IntegerField, PasswordField, FormField
 from wtforms.validators import DataRequired, Email, Length
 from flask_admin.form import BaseForm
 import secrets
-
+from pymongo import MongoClient
 # --- App Configuration ---
 app = Flask(__name__)
 app.secret_key = secrets.token_hex(16)
 app.config["MONGO_URI"] = "mongodb://localhost:27017/perfume_store"
+# اتصال به MongoDB با استفاده از MongoClient
+client = MongoClient("")
+db = client['BardiyaSaati']  # مشخص کردن دیتابیس به طور دقیق
+
+try:
+    print(f"Connected to database: {db.name}")
+except Exception as e:
+    print(f"Error: {e}")
 
 # --- Extensions ---
 mongo = PyMongo(app)
@@ -155,9 +163,13 @@ admin.add_view(OrderView(mongo.db.Orders, "Orders"))
 admin.add_view(ReviewView(mongo.db.Reviews, "Reviews"))
 
 # --- Public Routes ---
-# Home page
+
 @app.route('/')
 def index():
+    return redirect(url_for('login'))
+# Home page
+@app.route('/home')
+def home():
     products = mongo.db.Products.find()
     return render_template('index.html', products=products)
 
@@ -172,10 +184,19 @@ def product_detail(product_id):
 @app.route('/add_to_cart/<product_id>', methods=['POST'])
 def add_to_cart(product_id):
     quantity = int(request.form.get('quantity'))
-    cart = session.get('cart', [])
-    cart.append({"product_id": product_id, "quantity": quantity})
-    session['cart'] = cart
-    return redirect(url_for('index'))
+    product = db.Products.find_one({"_id": ObjectId(product_id)})
+    
+    if product:  # اطمینان از این که محصول وجود دارد
+        # اطلاعات کامل محصول به همراه قیمت و دیگر ویژگی‌ها به سبد خرید اضافه می‌شود
+        cart = session.get('cart', [])
+        cart.append({
+            "product_id": product_id,
+            "name": product['name'],
+            "price": product['price'],  # قیمت محصول
+            "quantity": quantity
+        })
+        session['cart'] = cart
+    return redirect(url_for('home'))
 
 # View cart
 @app.route('/cart')
@@ -184,50 +205,54 @@ def view_cart():
     cart_details = []
     total_price = 0
     for item in cart:
-        product = mongo.db.Products.find_one({"_id": ObjectId(item['product_id'])})
-        cart_details.append({
-            'name': product['name'],
-            'price': product['price'],
-            'quantity': item['quantity'],
-            'total': product['price'] * item['quantity']
-        })
-        total_price += product['price'] * item['quantity']
+        product = db.Products.find_one({"_id": ObjectId(item['product_id'])})
+        if product:  # اطمینان از این که محصول موجود است
+            cart_details.append({
+                'name': product['name'],
+                'price': product['price'],
+                'quantity': item['quantity'],
+                'total': product['price'] * item['quantity']
+            })
+            total_price += product['price'] * item['quantity']
     return render_template('checkout.html', cart_details=cart_details, total_price=total_price)
 
+login_manager.login_view = 'login'
 # Checkout
 @app.route('/checkout', methods=['POST'])
+
 def checkout():
     cart = session.get('cart', [])
     if not cart:
-        return redirect(url_for('index'))
+        return redirect(url_for('home'))
     
-    # Here, you would process the order
+    # گرفتن شناسه مشتری از current_user (که در Flask-Login ذخیره شده است)
+    customer_id = session['user_id']
+    
+    # ثبت سفارش در پایگاه داده
     order = {
-        'customer_id': 'customer_id_here',  # You would get customer info from session or login
+        'customer_id': customer_id,  # شناسه مشتری
         'products': cart,
-        'total_price': sum(item['quantity'] * mongo.db.Products.find_one({"_id": ObjectId(item['product_id'])})['price'] for item in cart),
-        'order_date': datetime.datetime.now(),
-        'status': 'Pending'
+        'total_price': sum(item['price'] * item['quantity'] for item in cart),
+        'order_date': str(datetime.datetime.now()),
+        'status': 'pending'
     }
-    mongo.db.Orders.insert_one(order)
-    
-    # Clear the cart after checkout
-    session['cart'] = []
-    return redirect(url_for('index'))
+    db.Orders.insert_one(order)  # سفارش در پایگاه داده ذخیره می‌شود
+    session.pop('cart', None)  # سبد خرید پس از ثبت سفارش پاک می‌شود
+    return redirect(url_for('home'))
 
 @app.route('/login', methods=['GET', 'POST'])
 def login():
     if request.method == 'POST':
         email = request.form['email']
         phone = request.form['phone']
-        
+        print(email)
         # جستجو برای کاربر در MongoDB
         user = mongo.db.Customers.find_one({"email": email})
-        
+        print(user)
         if user and (user['phone']== phone):
             # اگر کاربر پیدا شد و رمز عبور درست بود
             session['user_id'] = str(user['_id'])  # ذخیره اطلاعات کاربر در سشن
-            return redirect(url_for('index'))  # هدایت به صفحه اصلی
+            return redirect(url_for('home'))  # هدایت به صفحه اصلی
         else:
             # اگر ایمیل یا رمز عبور نادرست باشد
             return "Invalid credentials, please try again.", 401
@@ -263,5 +288,6 @@ def register():
 
 if __name__ == '__main__':
     app.run(debug=True)
+
 
 
