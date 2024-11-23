@@ -1,5 +1,4 @@
 from flask import Flask, render_template, request, redirect, url_for, session
-from flask_pymongo import PyMongo
 from bson import ObjectId
 import datetime
 from werkzeug.security import check_password_hash, generate_password_hash
@@ -12,21 +11,25 @@ from wtforms.validators import DataRequired, Email, Length
 from flask_admin.form import BaseForm
 import secrets
 from pymongo import MongoClient
+import datetime
+
 # --- App Configuration ---
 app = Flask(__name__)
 app.secret_key = secrets.token_hex(16)
-app.config["MONGO_URI"] = "mongodb://localhost:27017/perfume_store"
-# اتصال به MongoDB با استفاده از MongoClient
-client = MongoClient("")
-db = client['BardiyaSaati']  # مشخص کردن دیتابیس به طور دقیق
 
-try:
-    print(f"Connected to database: {db.name}")
-except Exception as e:
-    print(f"Error: {e}")
+
+from tkinter import Tk, Label, Button, Entry, Text, StringVar, messagebox, Frame, Scrollbar, Canvas
+from tkinter import font
+
+# MongoDB connection information
+MONGO_URI = "mongodb://dbadmin:dbImp!14%402@78.38.35.219:27017/?authMechanism=DEFAULT"
+client = MongoClient(MONGO_URI)
+db = client['BardiyaSaati']
+
+
+
 
 # --- Extensions ---
-mongo = PyMongo(app)
 bcrypt = Bcrypt(app)
 login_manager = LoginManager(app)
 login_manager.login_view = 'adlogin'
@@ -40,7 +43,7 @@ class AdminUser(UserMixin):
 
 @login_manager.user_loader
 def load_user(user_id):
-    user = mongo.db.AdminUsers.find_one({"_id": ObjectId(user_id)})
+    user = db.AdminUsers.find_one({"_id": ObjectId(user_id)})
     return AdminUser(user) if user else None
 
 # --- Custom Address Form ---
@@ -83,7 +86,7 @@ class CustomAdminModelView(ModelView):
 # --- Product View ---
 class ProductView(CustomAdminModelView):
     def scaffold_list_columns(self):
-        return ['name', 'brand', 'price', 'category', 'size', 'gender', 'stock', 'rating', 'notes' ,'image_url']
+        return ['name', 'brand', 'price', 'category', 'size', 'gender', 'stock', 'rating', 'notes', 'image_url']
 
     def scaffold_sortable_columns(self):
         return ['name', 'brand', 'price', 'rating']
@@ -99,7 +102,7 @@ class ProductView(CustomAdminModelView):
             stock = IntegerField('Stock', validators=[DataRequired()])
             rating = IntegerField('Rating')
             notes = StringField('Notes')
-            image_url = StringField('image_url')
+            image_url = StringField('Image URL')
         return ProductForm
 
 # --- Order View ---
@@ -142,7 +145,7 @@ def adlogin():
     if request.method == 'POST':
         username = request.form['username']
         password = request.form['password']
-        user = mongo.db.AdminUsers.find_one({'username': username})
+        user = db.AdminUsers.find_one({'username': username})
         if user and bcrypt.check_password_hash(user['password'], password):
             login_user(AdminUser(user))
             return redirect(url_for('admin.index'))
@@ -157,48 +160,43 @@ def logout():
     return redirect(url_for('login'))
 
 # --- Admin Views Registration ---
-admin.add_view(ProductView(mongo.db.Products, "Products"))
-admin.add_view(CustomAdminModelView(mongo.db.Customers, "Customers"))
-admin.add_view(OrderView(mongo.db.Orders, "Orders"))
-admin.add_view(ReviewView(mongo.db.Reviews, "Reviews"))
+admin.add_view(ProductView(db.Products, "Products"))
+admin.add_view(CustomAdminModelView(db.Customers, "Customers"))
+admin.add_view(OrderView(db.Orders, "Orders"))
+admin.add_view(ReviewView(db.Reviews, "Reviews"))
 
 # --- Public Routes ---
-
 @app.route('/')
 def index():
     return redirect(url_for('login'))
-# Home page
+
 @app.route('/home')
 def home():
-    products = mongo.db.Products.find()
+    products = db.Products.find()
     return render_template('index.html', products=products)
 
-# Product detail page
 @app.route('/product/<product_id>')
 def product_detail(product_id):
-    product = mongo.db.Products.find_one({"_id": ObjectId(product_id)})
-    reviews = mongo.db.Reviews.find({"product_id": ObjectId(product_id)})
+    product = db.Products.find_one({"_id": ObjectId(product_id)})
+    reviews = db.Reviews.find({"product_id": ObjectId(product_id)})
     return render_template('product_detail.html', product=product, reviews=reviews)
 
-# Add product to cart
 @app.route('/add_to_cart/<product_id>', methods=['POST'])
 def add_to_cart(product_id):
     quantity = int(request.form.get('quantity'))
     product = db.Products.find_one({"_id": ObjectId(product_id)})
     
-    if product:  # اطمینان از این که محصول وجود دارد
-        # اطلاعات کامل محصول به همراه قیمت و دیگر ویژگی‌ها به سبد خرید اضافه می‌شود
+    if product:
         cart = session.get('cart', [])
         cart.append({
             "product_id": product_id,
             "name": product['name'],
-            "price": product['price'],  # قیمت محصول
+            "price": product['price'],
             "quantity": quantity
         })
         session['cart'] = cart
     return redirect(url_for('home'))
 
-# View cart
 @app.route('/cart')
 def view_cart():
     cart = session.get('cart', [])
@@ -206,7 +204,7 @@ def view_cart():
     total_price = 0
     for item in cart:
         product = db.Products.find_one({"_id": ObjectId(item['product_id'])})
-        if product:  # اطمینان از این که محصول موجود است
+        if product:
             cart_details.append({
                 'name': product['name'],
                 'price': product['price'],
@@ -216,28 +214,23 @@ def view_cart():
             total_price += product['price'] * item['quantity']
     return render_template('checkout.html', cart_details=cart_details, total_price=total_price)
 
-login_manager.login_view = 'login'
-# Checkout
 @app.route('/checkout', methods=['POST'])
-
 def checkout():
     cart = session.get('cart', [])
     if not cart:
         return redirect(url_for('home'))
     
-    # گرفتن شناسه مشتری از current_user (که در Flask-Login ذخیره شده است)
     customer_id = session['user_id']
     
-    # ثبت سفارش در پایگاه داده
     order = {
-        'customer_id': customer_id,  # شناسه مشتری
+        'customer_id': customer_id,
         'products': cart,
         'total_price': sum(item['price'] * item['quantity'] for item in cart),
         'order_date': str(datetime.datetime.now()),
         'status': 'pending'
     }
-    db.Orders.insert_one(order)  # سفارش در پایگاه داده ذخیره می‌شود
-    session.pop('cart', None)  # سبد خرید پس از ثبت سفارش پاک می‌شود
+    db.Orders.insert_one(order)
+    session.pop('cart', None)
     return redirect(url_for('home'))
 
 @app.route('/login', methods=['GET', 'POST'])
@@ -245,16 +238,11 @@ def login():
     if request.method == 'POST':
         email = request.form['email']
         phone = request.form['phone']
-        print(email)
-        # جستجو برای کاربر در MongoDB
-        user = mongo.db.Customers.find_one({"email": email})
-        print(user)
-        if user and (user['phone']== phone):
-            # اگر کاربر پیدا شد و رمز عبور درست بود
-            session['user_id'] = str(user['_id'])  # ذخیره اطلاعات کاربر در سشن
-            return redirect(url_for('home'))  # هدایت به صفحه اصلی
+        user = db.Customers.find_one({"email": email})
+        if user and (user['phone'] == phone):
+            session['user_id'] = str(user['_id'])
+            return redirect(url_for('home'))
         else:
-            # اگر ایمیل یا رمز عبور نادرست باشد
             return "Invalid credentials, please try again.", 401
     
     return render_template('login.html')
@@ -265,29 +253,21 @@ def register():
     form = CustomerRegistrationForm(request.form)
     if request.method == 'POST':
         if form.validate():
-            print("Form validated successfully")
-            existing_user = mongo.db.Customers.find_one({"email": form.email.data})
-            phone=form.phone.data
+            existing_user = db.Customers.find_one({"email": form.email.data})
             if existing_user:
                 return "Email already registered", 400
 
             customer = {
                 "name": form.name.data,
                 "email": form.email.data,
-                "phone": phone,
+                "phone": form.phone.data,
                 "registration_date": str(datetime.datetime.now())
             }
-            mongo.db.Customers.insert_one(customer)
+            db.Customers.insert_one(customer)
             return redirect(url_for('login'))
         else:
-            print(f"Form errors: {form.errors}")  # چاپ خطاها برای بررسی مشکل
-            return f"Form is not valid :{form.errors}", 400
+            return f"Form is not valid: {form.errors}", 400
     return render_template('register.html', form=form)
-
-
 
 if __name__ == '__main__':
     app.run(debug=True)
-
-
-
